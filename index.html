@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>빛그림자 사진관</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.cdnfonts.com/css/ds-digital" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Diphylleia&family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
+  <style>
+    @font-face {
+      font-family: 'ChosunGs';
+      src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@1.0/ChosunGs.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+    }
+    body { 
+      background: #f5f5f5;
+      font-family: 'Montserrat', sans-serif;
+    }
+    .navbar-brand {
+      font-family: 'ChosunGs', cursive;
+      font-size: 1.8rem;
+      background-color: #000;
+      color: #fff;
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+    }
+    .navbar-brand:hover{
+      color: #fff;
+    }
+    #glCanvas {
+      background: #000;
+      width: 100%;
+      height: auto;
+      border: 20px solid transparent;
+    }
+    .input-group.custom-style {
+      border: 2px solid #000;
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    .input-group.custom-style .form-control {
+      border: none;
+      border-radius: 0;
+      background-color: #fff;
+      color: #333;
+      font-size: 1rem;
+    }
+    .input-group.custom-style .btn {
+      border: none;
+      border-radius: 0;
+      background-color: #000;
+      color: #fff;
+    }
+    .input-group.custom-style .btn:hover {
+      background-color: #333;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-light" style="background: #fff;">
+    <div class="container">
+      <a class="navbar-brand" href="#">빛그림자 사진관</a>
+    </div>
+  </nav>
+  
+  <div class="container my-4">
+    <h1 class="text-center mb-4">이미지를 업로드 해보세요.<br>이미지가 서버에 저장되지 않습니다.</h1>
+    <div class="row justify-content-center">
+      <div class="col-md-8">
+        <canvas id="glCanvas"></canvas>
+      </div>
+    </div>
+    <div class="row justify-content-center mt-4">
+      <div class="col-md-6">
+        <div class="input-group custom-style">
+          <input type="file" id="fileInput" accept="image/*" class="form-control">
+          <button id="saveBtn" class="btn">이미지 저장</button>
+        </div>
+        <div id="alert" class="alert alert-info mt-3" role="alert" style="display: none;">
+          iOS 사용자는 새 탭에서 열린 이미지를 길게 눌러 저장해 주세요.
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let watermarkDate = null;
+    
+    const canvas = document.getElementById("glCanvas");
+    const gl = canvas.getContext("webgl", { preserveDrawingBuffer: true }) ||
+               canvas.getContext("experimental-webgl", { preserveDrawingBuffer: true });
+    if (!gl) {
+      alert("WebGL을 지원하지 않는 브라우저입니다.");
+    }
+    
+    const vsSource = `
+      attribute vec4 a_position;
+      attribute vec2 a_texCoord;
+      varying vec2 v_texCoord;
+      void main() {
+        gl_Position = a_position;
+        v_texCoord = a_texCoord;
+      }
+    `;
+    const fsSource = `
+      precision mediump float;
+      uniform sampler2D u_image;
+      varying vec2 v_texCoord;
+      float random(vec2 co) {
+        return fract(sin(dot(co.xy, vec2(12.9898,78.233))) * 43758.5453);
+      }
+      void main() {
+        vec4 color = texture2D(u_image, v_texCoord);
+        color.rgb = (color.rgb - 0.5) * 1.2 + 0.5;
+        float gray = dot(color.rgb, vec3(0.33, 0.33, 0.33));
+        color.rgb = mix(color.rgb, vec3(gray), 0.2);
+        color.r *= 0.95;
+        color.g *= 1.0;
+        color.b *= 1.05;
+        vec3 sepia;
+        sepia.r = dot(color.rgb, vec3(0.393, 0.769, 0.189));
+        sepia.g = dot(color.rgb, vec3(0.349, 0.686, 0.168));
+        sepia.b = dot(color.rgb, vec3(0.272, 0.534, 0.131));
+        color.rgb = mix(color.rgb, sepia, 0.2);
+        float noise = random(v_texCoord) * 0.05;
+        color.rgb += noise;
+        color.rgb *= 0.9;
+        gl_FragColor = color;
+      }
+    `;
+    
+    function loadShader(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error("셰이더 컴파일 오류: " + gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+    
+    const vertexShader = loadShader(gl.VERTEX_SHADER, vsSource);
+    const fragmentShader = loadShader(gl.FRAGMENT_SHADER, fsSource);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error("프로그램 연결 오류: " + gl.getProgramInfoLog(program));
+    }
+    gl.useProgram(program);
+    
+    const vertices = new Float32Array([
+      -1, -1,   0, 1,
+       1, -1,   1, 1,
+      -1,  1,   0, 0,
+      -1,  1,   0, 0,
+       1, -1,   1, 1,
+       1,  1,   1, 0,
+    ]);
+    
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+    
+    const FSIZE = vertices.BYTES_PER_ELEMENT;
+    const a_position = gl.getAttribLocation(program, "a_position");
+    gl.vertexAttribPointer(a_position, 2, gl.FLOAT, false, FSIZE * 4, 0);
+    gl.enableVertexAttribArray(a_position);
+    
+    const a_texCoord = gl.getAttribLocation(program, "a_texCoord");
+    gl.vertexAttribPointer(a_texCoord, 2, gl.FLOAT, false, FSIZE * 4, FSIZE * 2);
+    gl.enableVertexAttribArray(a_texCoord);
+    
+    const u_image = gl.getUniformLocation(program, "u_image");
+    
+    let texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    const whitePixel = new Uint8Array([255, 255, 255, 255]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, whitePixel);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    
+    function updateTexture(image) {
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      
+      texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.uniform1i(u_image, 0);
+      drawScene();
+    }
+    
+    function drawScene() {
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.finish();
+    }
+    
+    document.getElementById("fileInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => { 
+        updateTexture(img);
+        EXIF.getData(img, function() {
+          const exifDate = EXIF.getTag(this, "DateTimeOriginal");
+          if (exifDate) {
+            let parts = exifDate.split(" ")[0].split(":");
+            watermarkDate = parts.join(".");
+          } else {
+            watermarkDate = null;
+          }
+        });
+      }
+      img.src = URL.createObjectURL(file);
+    });
+    
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      gl.finish();
+      const glDataURL = canvas.toDataURL("image/png");
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const ctx = tempCanvas.getContext("2d");
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0);
+        let dateStr = "";
+        if (watermarkDate) {
+          dateStr = watermarkDate;
+        } else {
+          const now = new Date();
+          dateStr = now.getFullYear() + "." + 
+                    String(now.getMonth() + 1).padStart(2, "0") + "." + 
+                    String(now.getDate()).padStart(2, "0");
+        }
+        const shortEdge = Math.min(tempCanvas.width, tempCanvas.height);
+        const fontSize = shortEdge * 0.035;
+        document.fonts.load(`${fontSize}px DS-Digital`).then(() => {
+          ctx.font = fontSize + "px 'DS-Digital', monospace";
+          ctx.fillStyle = "rgba(255,165,0,1)";
+          ctx.textAlign = "right";
+          ctx.shadowColor = "rgba(255,165,0,1)";
+          ctx.shadowOffsetX = 2;
+          ctx.shadowOffsetY = 2;
+          ctx.shadowBlur = fontSize * 0.1;
+          const margin = shortEdge * 0.025;
+          ctx.fillText(dateStr, tempCanvas.width - margin, tempCanvas.height - margin);
+          const dataURL = tempCanvas.toDataURL("image/png");
+          if (/iP(hone|od|ad)/.test(navigator.userAgent)) {
+            document.getElementById("alert").style.display = "block";
+            const html = `
+              <!DOCTYPE html>
+              <html lang="ko">
+              <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>저장된 이미지</title>
+                <style>
+                  body, html { margin: 0; padding: 0; background: #000; }
+                  img { width: 100%; height: auto; display: block; }
+                </style>
+              </head>
+              <body>
+                <img src="${dataURL}" alt="저장된 이미지">
+              </body>
+              </html>
+            `;
+            let newWindow = window.open("", "_blank");
+            if (newWindow) {
+              newWindow.document.open();
+              newWindow.document.write(html);
+              newWindow.document.close();
+            }
+          } else {
+            const link = document.createElement("a");
+            link.href = dataURL;
+            link.download = "Image_" + Date.now() + ".png";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        });
+      };
+      img.src = glDataURL;
+    });
+    
+    drawScene();
+  </script>
+</body>
+</html>
