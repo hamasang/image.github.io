@@ -1,0 +1,15 @@
+title: "빛그림자 사진관"
+description: "이미지를 업로드하고 WebGL 필터 효과를 적용할 수 있는 클라이언트 사이드 웹 애플리케이션입니다."
+lang: ko
+url: "https://image.github.io"
+baseurl: ""
+theme: minima
+markdown: kramdown
+permalink: /:title/
+exclude:
+  - README.md
+  - LICENSE
+  - node_modules
+  - _config.yml
+plugins:
+  - jekyll-feed
