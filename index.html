@@ -116,11 +116,11 @@
       }
 
       vec3 srgbToLinear(vec3 c) {
-        return pow(c, vec3(2.2));
+        return pow(c, vec3(1.8));
       }
 
       vec3 linearToSrgb(vec3 c) {
-        return pow(c, vec3(1.0/2.2));
+        return pow(c, vec3(1.0/1.8));
       }
 
       vec3 colorBalancePortra(vec3 color) {
@@ -130,8 +130,8 @@
         float highlightWeight = smoothstep(0.7, 1.0, luminance);
 
         vec3 shadowAdjust    = vec3( 0.05,  0.00, -0.02);
-        vec3 midtoneAdjust   = vec3( 0.02,  0.02,  0.00);
-        vec3 highlightAdjust = vec3( 0.00,  0.02,  0.00);
+        vec3 midtoneAdjust   = vec3( 0.02,  0.001,  0.00);
+        vec3 highlightAdjust = vec3( 0.00,  0.001,  0.00);
 
         vec3 result = color;
         result = mix(result + shadowAdjust, result, shadowWeight);
@@ -153,7 +153,7 @@
         color = srgbToLinear(color);
 
         float contrast = 1.05;
-        float brightness = 0.03;
+        float brightness = 0.0;
         color = (color - 0.5) * contrast + 0.5 + brightness;
 
         color = colorBalancePortra(color);
