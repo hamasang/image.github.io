@@ -57,6 +57,10 @@
     .input-group.custom-style .btn:hover {
       background-color: #333;
     }
+    /* 날짜 입력 필드 스타일 */
+    .date-inputs {
+      margin-top: 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -73,11 +77,23 @@
         <canvas id="glCanvas"></canvas>
       </div>
     </div>
+    <!-- 파일 입력 및 날짜 수정 입력 필드 (년, 월, 일) -->
     <div class="row justify-content-center mt-4">
       <div class="col-md-6">
         <div class="input-group custom-style">
           <input type="file" id="fileInput" accept="image/*" class="form-control">
           <button id="saveBtn" class="btn">이미지 저장</button>
+        </div>
+        <div class="row date-inputs">
+          <div class="col-4">
+            <input type="text" id="yearInput" class="form-control" placeholder="YYYY">
+          </div>
+          <div class="col-4">
+            <input type="text" id="monthInput" class="form-control" placeholder="MM">
+          </div>
+          <div class="col-4">
+            <input type="text" id="dayInput" class="form-control" placeholder="DD">
+          </div>
         </div>
         <div id="alert" class="alert alert-info mt-3" role="alert" style="display: none;">
           iOS 사용자는 새 탭에서 열린 이미지를 길게 눌러 저장해 주세요.
@@ -110,70 +126,70 @@
       precision mediump float;
       uniform sampler2D u_image;
       varying vec2 v_texCoord;
-
+      
       float random(vec2 co) {
         return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
       }
-
+      
       vec3 srgbToLinear(vec3 c) {
         return pow(c, vec3(1.8));
       }
-
+      
       vec3 linearToSrgb(vec3 c) {
         return pow(c, vec3(1.0/1.8));
       }
-
+      
       vec3 colorBalancePortra(vec3 color) {
         float luminance = dot(color, vec3(0.299, 0.587, 0.114));
         float shadowWeight = smoothstep(0.0, 0.3, luminance);
         float midtoneWeight = smoothstep(0.2, 0.8, luminance);
         float highlightWeight = smoothstep(0.7, 1.0, luminance);
-
+      
         vec3 shadowAdjust    = vec3( 0.05,  0.00, -0.02);
-        vec3 midtoneAdjust   = vec3( 0.02,  0.001,  0.00);
-        vec3 highlightAdjust = vec3( 0.00,  0.001,  0.00);
-
+        vec3 midtoneAdjust   = vec3( 0.02,  0.01,  0.00);
+        vec3 highlightAdjust = vec3( 0.00,  0.01,  0.00);
+      
         vec3 result = color;
         result = mix(result + shadowAdjust, result, shadowWeight);
         result = mix(result + midtoneAdjust, result, 1.0 - midtoneWeight);
         result = mix(result + highlightAdjust, result, 1.0 - highlightWeight);
-
+      
         return result;
       }
-
+      
       vec3 filmicToneMapping(vec3 color) {
         vec3 x = max(vec3(0.0), color - 0.004);
         return (x * (6.2*x + 0.5)) / (x*(6.2*x + 1.7) + 0.06);
       }
-
+      
       void main() {
         vec4 texColor = texture2D(u_image, v_texCoord);
         vec3 color = texColor.rgb;
-
+      
         color = srgbToLinear(color);
-
+      
         float contrast = 1.05;
         float brightness = 0.0;
         color = (color - 0.5) * contrast + 0.5 + brightness;
-
+      
         color = colorBalancePortra(color);
-
+      
         color = filmicToneMapping(color);
-
+      
         color = linearToSrgb(color);
-
+      
         float fade = 0.07;
         vec3 fadeColor = vec3(0.05, 0.04, 0.03); 
         color = mix(fadeColor, color, 1.0 - fade);
-
+      
         float satAmount = 0.9;
         float gray = dot(color, vec3(0.299, 0.587, 0.114));
         color = mix(vec3(gray), color, satAmount);
-
+      
         float noiseStrength = 0.23; 
         float n = random(v_texCoord * 100.0) * noiseStrength;
         color += n;
-
+      
         gl_FragColor = vec4(color, 1.0);
       }
     `;
@@ -257,6 +273,22 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.uniform1i(u_image, 0);
       drawScene();
+      
+      EXIF.getData(image, function() {
+        const exifDate = EXIF.getTag(this, "DateTimeOriginal");
+        if (exifDate) {
+          let parts = exifDate.split(" ")[0].split(":");
+          watermarkDate = parts.join(".");
+          document.getElementById("yearInput").value = parts[0];
+          document.getElementById("monthInput").value = parts[1];
+          document.getElementById("dayInput").value = parts[2];
+        } else {
+          watermarkDate = "";
+          document.getElementById("yearInput").value = "";
+          document.getElementById("monthInput").value = "";
+          document.getElementById("dayInput").value = "";
+        }
+      });
     }
     
     function drawScene() {
@@ -272,15 +304,6 @@
       const img = new Image();
       img.onload = () => { 
         updateTexture(img);
-        EXIF.getData(img, function() {
-          const exifDate = EXIF.getTag(this, "DateTimeOriginal");
-          if (exifDate) {
-            let parts = exifDate.split(" ")[0].split(":");
-            watermarkDate = parts.join(".");
-          } else {
-            watermarkDate = null;
-          }
-        });
       }
       img.src = URL.createObjectURL(file);
     });
@@ -295,9 +318,14 @@
       const img = new Image();
       img.onload = () => {
         ctx.drawImage(img, 0, 0);
+        let year = document.getElementById("yearInput").value;
+        let month = document.getElementById("monthInput").value;
+        let day = document.getElementById("dayInput").value;
         let dateStr = "";
-        if (watermarkDate) {
-          dateStr = watermarkDate;
+        if (year && month && day) {
+          month = month.toString().padStart(2, "0");
+          day = day.toString().padStart(2, "0");
+          dateStr = year + "." + month + "." + day;
         } else {
           const now = new Date();
           dateStr = now.getFullYear() + "." + 
